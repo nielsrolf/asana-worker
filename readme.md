@@ -6,10 +6,16 @@ Organize tasks as Asana board - this is nice when you
 - want to easily see & retry failed tasks
 - want to comment and discuss execution results in the task UI
 
+<img src="img/columns.png" width="420" alt="Detail view">
+
 **How does it work?**
 - save your credentials and asana board id in `.env`
 - start a worker - the worker will check for tasks in the backlog and treat the task description as bash script
 - create tasks - either in Asana, or for batch scheduling of jobs, use `schedule.py`
+- experiment logs and files saved to `./outputs` will be uploaded to the ticket as attachment when the job is done
+
+<img src="img/details.png" width="420" alt="Detail view">
+
 
 ## Start a worker
 ```
