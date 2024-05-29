@@ -1,0 +1,6 @@
+.env
+job_name_to_gid.yaml
+prompt
+uppercase_lowercase_nocot.yaml
+__pycache__
+notes
