@@ -1,7 +1,16 @@
 import yaml
 import re
 from typing import List, Dict
-from worker import *
+import asana
+from asana.rest import ApiException
+from experisana.worker import (
+    WORKSPACE_GID,
+    PROJECT_GID,
+    BACKLOG_COLUMN_GID,
+    opts,
+    api_client,
+    tasks_api_instance
+)
 import random
 import fire
 import itertools
@@ -11,8 +20,23 @@ def load_yaml(file_path: str) -> Dict:
     with open(file_path, 'r') as file:
         return yaml.safe_load(file)
 
-def substitute_variables(value: str, context: Dict[str, str]) -> str:
-    return value.format(**context)
+def substitute_variables(value: str, context: dict[str, str]) -> str:
+    """
+    Fills the value with data from the context.
+    Example:
+        value = "{some_nested_{var}}"
+        context = {'var': 1, 'some_nested_1': 'yey', 'some_nested_2': 'oops'}
+        # Returns: 'yey'
+    Arguments:
+        value: string to be filled with values from the context
+        context: dict
+    """
+    prev = ''
+    while value != prev:
+        prev = value
+        for key, val in context.items():
+            value = value.replace(f"{{{key}}}", str(val))
+    return value
 
 def resolve_dependencies(value: str, jobs_context: Dict[str, Dict[str, str]]) -> str:
     pattern = re.compile(r'\$\((\w+)\.(\w+)\)')

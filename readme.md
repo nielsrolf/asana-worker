@@ -14,19 +14,25 @@ Organize tasks as Asana board - this is nice when you
 - create tasks - either in Asana, or for batch scheduling of jobs, use `schedule.py`
 - experiment logs and files saved to `./outputs` will be uploaded to the ticket as attachment when the job is done
 
+## Install
+Clone the repo and run
+```
+pip install .
+```
+
 ## Start a worker
 ```
-python worker.py
+experisana worker
 ```
 
 ## Schedule jobs with dependencies
 Sometimes you want to schedule a large amount of jobs which may have dependencies (like a CI with stages). You can do this with:
 ```
-python schedule.py example.yaml
+experisana schedule example.yaml
 ```
 
 ## Example YAML Configuration
-Here is an example of an actual experiment configuration you might use:
+Here is an example of an actual experiment configuration you might use:∆
 ```yaml
 script: |
   echo "Running experiment with model_id={model_id} and base_model={base_model} and train_on={train_on}"
