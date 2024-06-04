@@ -189,8 +189,8 @@ def run_experiment(task):
     except Exception as e:
         print("Exception when reading log file or posting comment: %s\n" % e)
 
-    # Upload all outputs in the task_directory/outputs directory
-    for root, dirs, files in os.walk(os.path.join(task_dir, "outputs")):
+    # Upload all uploads in the task_directory/uploads directory
+    for root, dirs, files in os.walk(os.path.join(task_dir, "uploads")):
         for file in files:
             try:
                 subprocess.run([
