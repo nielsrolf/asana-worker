@@ -4,6 +4,7 @@ from typing import List, Dict
 from worker import *
 import random
 import fire
+import itertools
 
 
 def load_yaml(file_path: str) -> Dict:
@@ -17,10 +18,7 @@ def resolve_dependencies(value: str, jobs_context: Dict[str, Dict[str, str]]) ->
     pattern = re.compile(r'\$\((\w+)\.(\w+)\)')
     return pattern.sub(lambda match: jobs_context[match.group(1)][match.group(2)], value)
 
-from typing import List
 tags_api_instance = asana.TagsApi(api_client)
-
-  
 job_name_to_gid = {}
 
 def random_color() -> str:
@@ -28,17 +26,14 @@ def random_color() -> str:
     return random.choice(colors)
 
 def get_or_create_tag(tag_name: str) -> str:
-    # Check if the tag exists
     tags = tags_api_instance.get_tags_for_workspace(WORKSPACE_GID, {'opt_fields': 'name'})
     try:
         for tag in tags:
             if tag['name'] == tag_name:
                 return tag['gid']
     except ApiException as e:
-        # Tag does not exist
         print(f"Exception when calling TagsApi->get_tags_for_workspace: {e}")
     
-    # Create the tag if it does not exist
     tag_data = {
         "data": {
             "name": tag_name,
@@ -50,7 +45,6 @@ def get_or_create_tag(tag_name: str) -> str:
     return tag['gid']
 
 def schedule(task_name: str, script: str, depends_on: List[str], tags: List[str] = [], title: str = None):
-    # Construct the notes with script and dependencies
     notes = f"# Script\n{script}\n\n# Depends on\n"
     for dependency in depends_on:
         dependency_gid = job_name_to_gid.get(dependency, None)
@@ -59,7 +53,6 @@ def schedule(task_name: str, script: str, depends_on: List[str], tags: List[str]
         else:
             notes += f"- {dependency} (GID not found)\n"
 
-    # Create the task in the Asana project
     task_data = {
         "data": {
             "name": title or task_name,
@@ -71,7 +64,6 @@ def schedule(task_name: str, script: str, depends_on: List[str], tags: List[str]
     task = tasks_api_instance.create_task(task_data, opts)
     task_gid = task['gid']
 
-    # Add tags to the task
     for tag_name in tags:
         tag_gid = get_or_create_tag(tag_name)
         if tag_gid:
@@ -84,6 +76,9 @@ def schedule(task_name: str, script: str, depends_on: List[str], tags: List[str]
     job_name_to_gid[task_name] = int(task_gid)
     return task_gid
 
+def generate_combinations(parameters: Dict[str, List[str]]) -> List[Dict[str, str]]:
+    keys, values = zip(*parameters.items())
+    return [dict(zip(keys, combination)) for combination in itertools.product(*values)]
 
 def main(file_path: str):
     config = load_yaml(file_path)
@@ -92,25 +87,33 @@ def main(file_path: str):
     default_context = config['default']
     stages = config['stages']
     
+    list_parameters = {k: v for k, v in default_context.items() if isinstance(v, list)}
+    if list_parameters:
+        combinations = generate_combinations(list_parameters)
+    else:
+        combinations = [{}]
+
     jobs_context = {}
     jobs_dependencies = {}
 
-    for stage in stages:
-        job_name = stage['name']
-        context = {**default_context, **stage}
-        
-        for nested_level in range(4):
-            for key, value in context.items():
-                if isinstance(value, str):
-                    context[key] = substitute_variables(value, context)
-                    context[key] = resolve_dependencies(context[key], jobs_context)
-        
-        jobs_context[job_name] = context
-        jobs_dependencies[job_name] = [match.group(1) for match in re.finditer(r'\$\((\w+)\.\w+\)', str(stage))]
+    for combination in combinations:
+        combined_context = {**default_context, **combination}
+        for stage in stages:
+            job_name = stage['name']
+            context = {**combined_context, **stage}
+            
+            for nested_level in range(4):
+                for key, value in context.items():
+                    if isinstance(value, str):
+                        context[key] = substitute_variables(value, context)
+                        context[key] = resolve_dependencies(context[key], jobs_context)
+            
+            jobs_context[job_name] = context
+            jobs_dependencies[job_name] = [match.group(1) for match in re.finditer(r'\$\((\w+)\.\w+\)', str(stage))]
 
-        script = substitute_variables(script_template, context)
-        tags = [i.strip() for i in context.get('tags', '').split(',')]
-        schedule(job_name, script, jobs_dependencies[job_name], tags=tags, title= context.get('model_id'))
+            script = substitute_variables(script_template, context)
+            tags = [i.strip() for i in context.get('tags', '').split(',')]
+            schedule(job_name, script, jobs_dependencies[job_name], tags=tags, title=context.get('model_id'))
 
 
 if __name__ == "__main__":

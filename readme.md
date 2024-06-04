@@ -14,9 +14,6 @@ Organize tasks as Asana board - this is nice when you
 - create tasks - either in Asana, or for batch scheduling of jobs, use `schedule.py`
 - experiment logs and files saved to `./outputs` will be uploaded to the ticket as attachment when the job is done
 
-<img src="img/details.png" width="420" alt="Detail view">
-
-
 ## Start a worker
 ```
 python worker.py
@@ -28,23 +25,42 @@ Sometimes you want to schedule a large amount of jobs which may have dependencie
 python schedule.py example.yaml
 ```
 
-An explanation of the yaml:
-```
+## Example YAML Configuration
+Here is an example of an actual experiment configuration you might use:
+```yaml
 script: |
-  echo "This script will be executed. Values will be filled in: model_id={model_id}"
-  echo "Values are filled with defaults and values defined by a stage"
-  echo "To indicate that a job depends on a different job, have them define variables that reference other "
+  echo "Running experiment with model_id={model_id} and base_model={base_model} and train_on={train_on}"
+  echo "You will need to implement the actual main.py yourself - this is just an example!"
+  python main.py --config-name template-{cot} \
+    model_id={model_id} \
+    training.base_model={base_model} \
+    training.train_dataset={train_on}
 
 default:
-  group: experiment1
-  model_id: "cot-{group}-{name}"
-  tags: "{group},tag2"
+  group: my-awesome-experiment
+  size: ["8b", "70b"]
+  cot: ["no-cot", "cot"]
+  model_id: "{group}-{size}-{cot}-{name}"
+  tags: "{group},{cot},{size}"
+
+  eval-dataset: path/to/some/data.jsonl
+  helpfulness: path/to/training/v1.jsonl
+  harmlessness: path/to/training/v2.jsonl
+  hhh: path/to/training/v3.jsonl
 
 stages:
-  - name: job1
-    base_model: meta-llama/Meta-Llama-3-8B-Instruct
-  - name: job2
-    base_model: $(job1.model_id)
-  - name: job3
-    base_model: $(job1.model_id)
+  - name: stage1
+    base_model: unsloth/llama-3-{size}-Instrstage1t-bnb-4bit
+    train_on: "{helpfulness}"
+  - name: stage1-intervention
+    base_model: $(stage1.model_id)
+    train_on: "{harmlessness}"
+  - name: stage1-control
+    base_model: $(stage1.model_id)
+    train_on: "{hhh}"
 ```
+
+### Explanation
+- Default Section: Defines default values for parameters. Lists indicate a sweep will be performed over those values.
+- Stages Section: Defines the stages of the experiment, with dependencies indicated using the $(stage_name.parameter) syntax.
+When running schedule.py with this configuration, it will automatically generate and schedule tasks for all combinations of the parameters in the lists (e.g., for all combinations of size and cot).
