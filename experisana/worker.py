@@ -168,6 +168,7 @@ def run_experiment(task):
     original_cwd = os.getcwd()
     os.chdir(task_dir)
 
+    print(f"Use the following command to watch logs:\n    watch tail {log_file_path}")
     with open(log_file_path, "w") as log_file:
         try:
             result = subprocess.run(command, shell=True, check=True, stdout=log_file, stderr=subprocess.STDOUT)
