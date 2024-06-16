@@ -104,7 +104,7 @@ def generate_combinations(parameters: Dict[str, List[str]]) -> List[Dict[str, st
     keys, values = zip(*parameters.items())
     return [dict(zip(keys, combination)) for combination in itertools.product(*values)]
 
-def main(file_path: str):
+def main(file_path: str, onlyprint: bool = False):
     config = load_yaml(file_path)
     
     script_template = config['script']
@@ -123,7 +123,6 @@ def main(file_path: str):
     for combination in combinations:
         combined_context = {**default_context, **combination}
         for stage in stages:
-            job_name = stage['name']
             context = {**combined_context, **stage}
             
             for nested_level in range(4):
@@ -132,12 +131,16 @@ def main(file_path: str):
                         context[key] = substitute_variables(value, context)
                         context[key] = resolve_dependencies(context[key], jobs_context)
             
+            job_name = context['name']
             jobs_context[job_name] = context
             jobs_dependencies[job_name] = [match.group(1) for match in re.finditer(r'\$\((\w+)\.\w+\)', str(stage))]
 
             script = substitute_variables(script_template, context)
+            print("-" * 80)
+            print(script)
             tags = [i.strip() for i in context.get('tags', '').split(',')]
-            schedule(job_name, script, jobs_dependencies[job_name], tags=tags, title=context.get('model_id'))
+            if not onlyprint:
+                schedule(job_name, script, jobs_dependencies[job_name], tags=tags, title=context.get('model_id'))
 
 
 if __name__ == "__main__":

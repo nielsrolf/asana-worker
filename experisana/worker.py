@@ -151,6 +151,9 @@ def run_experiment(task):
     task_gid = task['gid']
     command = task['notes'].strip().split("# Depends on")[0].strip()
 
+    # Prepend 'set -e' to ensure the shell exits if any command fails
+    command = f"set -e; {command}"
+
     # Create a new directory for the task
     task_dir = os.path.join("/tmp", f"task_{task_gid}_{datetime.now().strftime('%Y%m%d%H%M%S')}")
     os.makedirs(task_dir, exist_ok=True)
@@ -208,6 +211,7 @@ def run_experiment(task):
 
     # Change back to the original working directory
     os.chdir(original_cwd)
+
 
 
 def main():
