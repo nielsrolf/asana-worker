@@ -171,6 +171,7 @@ def run_experiment(task):
     original_cwd = os.getcwd()
     os.chdir(task_dir)
 
+    print(f"Use the following command to watch logs:\n    watch tail {log_file_path}")
     with open(log_file_path, "w") as log_file:
         try:
             result = subprocess.run(command, shell=True, check=True, stdout=log_file, stderr=subprocess.STDOUT)
@@ -192,8 +193,8 @@ def run_experiment(task):
     except Exception as e:
         print("Exception when reading log file or posting comment: %s\n" % e)
 
-    # Upload all outputs in the task_directory/outputs directory
-    for root, dirs, files in os.walk(os.path.join(task_dir, "outputs")):
+    # Upload all uploads in the task_directory/uploads directory
+    for root, dirs, files in os.walk(os.path.join(task_dir, "uploads")):
         for file in files:
             try:
                 subprocess.run([
