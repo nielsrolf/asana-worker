@@ -13,19 +13,11 @@ load_dotenv()
 ACCESS_TOKEN = os.getenv("ASANA_ACCESS_TOKEN")
 WORKSPACE_GID = os.getenv("ASANA_WORKSPACE_GID")
 PROJECT_GID = os.getenv("ASANA_PROJECT_GID")
-BACKLOG_COLUMN_GID = os.getenv("ASANA_BACKLOG_COLUMN_GID")
-RUNNING_COLUMN_GID = os.getenv("ASANA_RUNNING_COLUMN_GID")
-DONE_COLUMN_GID = os.getenv("ASANA_DONE_COLUMN_GID")
-FAILED_COLUMN_GID = os.getenv("ASANA_FAILED_COLUMN_GID")
 
 expected_envs = [
     "ASANA_ACCESS_TOKEN",
     "ASANA_WORKSPACE_GID",
-    "ASANA_PROJECT_GID",
-    "ASANA_BACKLOG_COLUMN_GID",
-    "ASANA_RUNNING_COLUMN_GID",
-    "ASANA_DONE_COLUMN_GID",
-    "ASANA_FAILED_COLUMN_GID"
+    "ASANA_PROJECT_GID"
 ]
 if not all([os.getenv(i) for i in expected_envs]):
     missing = [i for i in expected_envs if not os.getenv(i)]
@@ -43,6 +35,20 @@ tasks_api_instance = asana.TasksApi(api_client)
 sections_api_instance = asana.SectionsApi(api_client)
 attachments_api_instance = asana.AttachmentsApi(api_client)
 stories_api_instance = asana.StoriesApi(api_client)
+
+def get_column_gids():
+    try:
+        sections = sections_api_instance.get_sections_for_project(PROJECT_GID, opts=opts)
+        column_gids = {}
+        for section in sections:
+            column_gids[section['name']] = section['gid']
+        return column_gids
+    except ApiException as e:
+        print("Exception when fetching project sections: %s\n" % e)
+        return {}
+column_gids = get_column_gids()
+
+BACKLOG_COLUMN_GID = column_gids.get("Backlog", None)
 
 def get_or_create_worker_id():
     worker_id_path = os.path.expanduser("~/worker_id")
@@ -69,23 +75,23 @@ def get_task_dependencies(task):
                 dependencies.append(dependency)
     return dependencies
 
-def is_task_done(task_gid):
+def is_task_done(task_gid, done_column_gid):
     try:
         task = get_task_details(task_gid)
         if task is None:
             return False
-        return task['memberships'][0]['section']['gid'] == DONE_COLUMN_GID
+        return task['memberships'][0]['section']['gid'] == done_column_gid
     except ApiException as e:
         print("Exception when checking task status: %s\n" % e)
     return False
 
-def get_backlog_task():
-    tasks = tasks_api_instance.get_tasks_for_section(BACKLOG_COLUMN_GID, {"limit": 1})
+def get_backlog_task(backlog_column_gid, done_column_gid):
+    tasks = tasks_api_instance.get_tasks_for_section(backlog_column_gid, {"limit": 1})
     for task in tasks:
         try:
             task_details = get_task_details(task['gid'])
             dependencies = get_task_dependencies(task_details)
-            if all(is_task_done(dep) for dep in dependencies):
+            if all(is_task_done(dep, done_column_gid) for dep in dependencies):
                 return task_details
         except ApiException as e:
             print("Exception when calling get_backlog_task: %s\n" % e)
@@ -146,7 +152,7 @@ def post_comment_to_task(task_gid, comment_text):
     except ApiException as e:
         print("Exception when calling StoriesApi->create_story_for_task: %s\n" % e)
 
-def run_experiment(task):
+def run_experiment(task, column_gids):
     print(f"Running experiment: {task['name']}")
     task_gid = task['gid']
     command = task['notes'].strip().split("# Depends on")[0].strip()
@@ -163,7 +169,7 @@ def run_experiment(task):
         print("Failed to download attachments")
         return
 
-    move_task_to_column(task_gid, RUNNING_COLUMN_GID)
+    move_task_to_column(task_gid, column_gids["Running"])
 
     log_file_path = os.path.join(task_dir, "experiment_logs.txt")
 
@@ -175,10 +181,10 @@ def run_experiment(task):
     with open(log_file_path, "w") as log_file:
         try:
             result = subprocess.run(command, shell=True, check=True, stdout=log_file, stderr=subprocess.STDOUT)
-            move_task_to_column(task_gid, DONE_COLUMN_GID)
+            move_task_to_column(task_gid, column_gids["Done"])
             status = 'succeeded'
         except subprocess.CalledProcessError:
-            move_task_to_column(task_gid, FAILED_COLUMN_GID)
+            move_task_to_column(task_gid, column_gids["Failed"])
             status = 'failed'
 
     # Read the first 100 lines of the log file and post as a comment
@@ -213,18 +219,19 @@ def run_experiment(task):
     # Change back to the original working directory
     os.chdir(original_cwd)
 
-
-
 def main():
     worker_id = get_or_create_worker_id()
 
+    if not column_gids:
+        print("Failed to fetch column GIDs")
+        return
+
     while True:
-        task = get_backlog_task()
+        task = get_backlog_task(column_gids["Backlog"], column_gids["Done"])
         if task:
-            run_experiment(task)
+            run_experiment(task, column_gids)
         else:
             time.sleep(5)  # Sleep for 5 seconds before checking again
-
 
 if __name__ == "__main__":
     main()
