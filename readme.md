@@ -17,7 +17,7 @@ Organize tasks as Asana board - this is nice when you
 ## Install
 Clone the repo and run
 ```
-pip install .
+pip install -e .
 ```
 
 ## Start a worker
