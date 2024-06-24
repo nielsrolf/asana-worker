@@ -8,7 +8,8 @@ setup(
         'fire',
         'asana',
         'python-dotenv',
-        'requests'
+        'requests',
+        'backoff'
     ],
     entry_points={
         'console_scripts': [

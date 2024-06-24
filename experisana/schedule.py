@@ -35,6 +35,8 @@ def substitute_variables(value: str, context: dict[str, str]) -> str:
     while value != prev:
         prev = value
         for key, val in context.items():
+            if isinstance(val, dict):
+                breakpoint()
             value = value.replace(f"{{{key}}}", str(val))
     return value
 
@@ -87,14 +89,14 @@ def schedule(task_name: str, script: str, depends_on: List[str], tags: List[str]
     }
     task = tasks_api_instance.create_task(task_data, opts)
     task_gid = task['gid']
-
+    
     for tag_name in tags:
-        tag_gid = get_or_create_tag(tag_name)
-        if tag_gid:
-            try:
+        try:
+            tag_gid = get_or_create_tag(tag_name)
+            if tag_gid:
                 tasks_api_instance.add_tag_for_task({"data": {"tag": tag_gid}}, task_gid)
-            except ApiException as e:
-                print(f"Exception when adding tag '{tag_name}' to task: {e}")
+        except ApiException as e:
+            print(f"Exception when adding tag '{tag_name}' to task: {e}")
 
     print(f"Task '{task_name}' created with GID: {task_gid}")
     job_name_to_gid[task_name] = int(task_gid)
