@@ -1,0 +1,9 @@
+
+shutdown:
+  after_idle_minutes: 1
+  cmd: "echo 'yo'"
+
+scale:
+  min: 1
+  max: 10
+  cmd: "python start_runpod.py"

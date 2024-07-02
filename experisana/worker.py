@@ -8,6 +8,7 @@ import requests
 from requests.exceptions import RequestException
 from asana.rest import ApiException
 import backoff
+import yaml
 
 load_dotenv()
 
@@ -37,6 +38,22 @@ tasks_api_instance = asana.TasksApi(api_client)
 sections_api_instance = asana.SectionsApi(api_client)
 attachments_api_instance = asana.AttachmentsApi(api_client)
 stories_api_instance = asana.StoriesApi(api_client)
+
+
+def load_config():
+    """Check for experisana.yaml in [./, ../, ...]"""
+    cwd = os.getcwd()
+    while cwd != "/":
+        config_path = os.path.join(cwd, "experisana.yaml")
+        if os.path.exists(config_path):
+            return yaml.safe_load(open(config_path, "r"))
+        cwd = os.path.dirname(cwd)
+    # A bit of custom logic for imo-experiments
+    config_path = "/workspace/experisana.yaml"
+    if os.path.exists(config_path):
+        return yaml.safe_load(open(config_path, "r"))
+    return {}
+CONFIG = load_config()
 
 @backoff.on_exception(backoff.expo, (ApiException), max_tries=100)
 def get_column_gids():
@@ -225,6 +242,22 @@ def run_experiment(task, column_gids):
     # Change back to the original working directory
     os.chdir(original_cwd)
 
+
+def maybe_shutdown(idle_since):
+    try:
+        shutdown_after_minutes = CONFIG['shutdown']['after_idle_minutes']
+        shutdown_cmd = CONFIG['shutdown'].get("cmd", "shutdown -h now")
+    except KeyError:
+        # We remain active if the config is missing
+        return
+    idle_seconds = (datetime.now() - idle_since).total_seconds()
+    print(f"Idle for {idle_seconds} seconds. Shutting down after {shutdown_after_minutes} minutes of inactivity via '{shutdown_cmd}'")
+    if idle_seconds > 60 * shutdown_after_minutes:
+        print("Shutting down worker due to inactivity")
+        os.system(shutdown_cmd)
+        exit(0)
+
+
 def main():
     worker_id = get_or_create_worker_id()
 
@@ -232,16 +265,20 @@ def main():
         print("Failed to fetch column GIDs")
         return
 
+    idle_since = datetime.now()
     while True:
         try:
             task = get_backlog_task(column_gids["Backlog"], column_gids["Done"])
             if task:
                 run_experiment(task, column_gids)
+                idle_since = datetime.now()
             else:
+                maybe_shutdown(idle_since)
                 time.sleep(5)  # Sleep for 5 seconds before checking again
         except Exception as e:
             print(f"Unexpected error in main loop: {e}")
             time.sleep(60)  # Sleep for 1 minute before retrying
+
 
 if __name__ == "__main__":
     main()

@@ -9,7 +9,8 @@ setup(
         'asana',
         'python-dotenv',
         'requests',
-        'backoff'
+        'backoff',
+        'PyYAML'
     ],
     entry_points={
         'console_scripts': [
