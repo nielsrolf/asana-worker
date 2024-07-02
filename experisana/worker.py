@@ -123,6 +123,102 @@ def get_backlog_task(backlog_column_gid, done_column_gid):
     return None
 
 @backoff.on_exception(backoff.expo, (ApiException, RequestException), max_tries=5)
+def assign_task_to_worker(task_gid, worker_id):
+    try:
+        # Get the current task details
+        task = get_task_details(task_gid)
+        
+        # Update the task notes with the worker assignment
+        updated_notes = task['notes'].strip() + f"\n# Assigned to: {worker_id}"
+        
+        update_data = {
+            "data": {
+                "notes": updated_notes
+            }
+        }
+        
+        # Update the task
+        updated_task = tasks_api_instance.update_task(update_data, task_gid, opts)
+        
+        # Move the task to the Running column
+        move_task_to_column(task_gid, column_gids["Running"])
+        
+        # Check if the assignment was successful
+        final_task = get_task_details(task_gid)
+        if final_task['notes'].strip().endswith(f"# Assigned to: {worker_id}"):
+            return True
+        else:
+            return False
+    except ApiException as e:
+        print(f"Exception when assigning task to worker: {e}")
+        raise
+
+def run_experiment(task, column_gids, worker_id):
+    print(f"Running experiment: {task['name']}")
+    task_gid = task['gid']
+    
+    # Try to assign the task to this worker
+    if not assign_task_to_worker(task_gid, worker_id):
+        print(f"Task {task_gid} was assigned to another worker. Skipping.")
+        return False
+    
+    command = task['notes'].strip().split("# Depends on")[0].strip().split("# Assigned to:")[0].strip()
+    # Prepend 'set -e' to ensure the shell exits if any command fails
+    command = f"set -e; {command}"
+
+    # Create a new directory for the task
+    task_dir = os.path.join("/tmp", f"task_{task_gid}_{datetime.now().strftime('%Y%m%d%H%M%S')}")
+    os.makedirs(task_dir, exist_ok=True)
+
+    # Download attachments to the new directory
+    if not download_attachments(task_gid, task_dir):
+        print("Failed to download attachments")
+        return
+
+    move_task_to_column(task_gid, column_gids["Running"])
+
+    log_file_path = os.path.join(task_dir, "experiment_logs.txt")
+
+    # Change the current working directory to the new task directory
+    original_cwd = os.getcwd()
+    os.chdir(task_dir)
+
+    print(f"Use the following command to watch logs:\n    watch tail {log_file_path}")
+    with open(log_file_path, "w") as log_file:
+        try:
+            result = subprocess.run(command, shell=True, check=True, stdout=log_file, stderr=subprocess.STDOUT)
+            move_task_to_column(task_gid, column_gids["Done"])
+            status = 'succeeded'
+        except subprocess.CalledProcessError:
+            move_task_to_column(task_gid, column_gids["Failed"])
+            status = 'failed'
+
+    # Read the first 100 lines of the log file and post as a comment
+    try:
+        with open(log_file_path, "r") as log_file:
+            log_lines = log_file.readlines()
+            comment_text = f'Status: {status} with logs:\n```\n' + ''.join(log_lines[:100]) + '\n```\n'
+            if len(log_lines) > 100:
+                comment_text += f'... and {len(log_lines) - 100} more lines'
+                upload_log_to_task(task_gid, log_file_path)
+            post_comment_to_task(task_gid, comment_text)
+    except Exception as e:
+        print(f"Exception when reading log file or posting comment: {e}")
+
+    # Upload all uploads in the task_directory/uploads directory
+    for root, dirs, files in os.walk(os.path.join(task_dir, "uploads")):
+        for file in files:
+            try:
+                upload_log_to_task(task_gid, os.path.join(root, file))
+            except Exception as e:
+                print(f"Exception when uploading file {file}: {e}")
+
+    # Change back to the original working directory
+    os.chdir(original_cwd)
+
+
+
+@backoff.on_exception(backoff.expo, (ApiException, RequestException), max_tries=5)
 def move_task_to_column(task_gid, section_gid):
     opts = {
         'body': {
@@ -184,64 +280,6 @@ def post_comment_to_task(task_gid, comment_text):
     except ApiException as e:
         print(f"Exception when calling StoriesApi->create_story_for_task: {e}")
         raise
-
-def run_experiment(task, column_gids):
-    print(f"Running experiment: {task['name']}")
-    task_gid = task['gid']
-    command = task['notes'].strip().split("# Depends on")[0].strip()
-
-    # Prepend 'set -e' to ensure the shell exits if any command fails
-    command = f"set -e; {command}"
-
-    # Create a new directory for the task
-    task_dir = os.path.join("/tmp", f"task_{task_gid}_{datetime.now().strftime('%Y%m%d%H%M%S')}")
-    os.makedirs(task_dir, exist_ok=True)
-
-    # Download attachments to the new directory
-    if not download_attachments(task_gid, task_dir):
-        print("Failed to download attachments")
-        return
-
-    move_task_to_column(task_gid, column_gids["Running"])
-
-    log_file_path = os.path.join(task_dir, "experiment_logs.txt")
-
-    # Change the current working directory to the new task directory
-    original_cwd = os.getcwd()
-    os.chdir(task_dir)
-
-    print(f"Use the following command to watch logs:\n    watch tail {log_file_path}")
-    with open(log_file_path, "w") as log_file:
-        try:
-            result = subprocess.run(command, shell=True, check=True, stdout=log_file, stderr=subprocess.STDOUT)
-            move_task_to_column(task_gid, column_gids["Done"])
-            status = 'succeeded'
-        except subprocess.CalledProcessError:
-            move_task_to_column(task_gid, column_gids["Failed"])
-            status = 'failed'
-
-    # Read the first 100 lines of the log file and post as a comment
-    try:
-        with open(log_file_path, "r") as log_file:
-            log_lines = log_file.readlines()
-            comment_text = f'Status: {status} with logs:\n```\n' + ''.join(log_lines[:100]) + '\n```\n'
-            if len(log_lines) > 100:
-                comment_text += f'... and {len(log_lines) - 100} more lines'
-                upload_log_to_task(task_gid, log_file_path)
-            post_comment_to_task(task_gid, comment_text)
-    except Exception as e:
-        print(f"Exception when reading log file or posting comment: {e}")
-
-    # Upload all uploads in the task_directory/uploads directory
-    for root, dirs, files in os.walk(os.path.join(task_dir, "uploads")):
-        for file in files:
-            try:
-                upload_log_to_task(task_gid, os.path.join(root, file))
-            except Exception as e:
-                print(f"Exception when uploading file {file}: {e}")
-
-    # Change back to the original working directory
-    os.chdir(original_cwd)
 
 
 @backoff.on_exception(backoff.expo, (ApiException, RequestException), max_tries=5)
@@ -350,7 +388,7 @@ def main():
             maybe_scale_in_background()
             task = get_backlog_task(column_gids["Backlog"], column_gids["Done"])
             if task:
-                run_experiment(task, column_gids)
+                run_experiment(task, column_gids, worker_id)
                 idle_since = datetime.now()
             else:
                 maybe_shutdown(idle_since, worker_id)
