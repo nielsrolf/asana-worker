@@ -1,8 +1,8 @@
 
 shutdown:
   after_idle_minutes: 1
-  cmd: "python /Users/nielswarncke/Documents/clr/influencing-model-organisms/unsloth/stop_runpod.py {worker_id}"
+  cmd: "python /workspace/code/influencing-model-organisms/unsloth/stop_runpod.py {worker_id}"
 
 scale:
   max: 2
-  cmd: "python /Users/nielswarncke/Documents/clr/influencing-model-organisms/unsloth/start_runpod.py A6000"
+  cmd: "python /workspace/code/influencing-model-organisms/unsloth/start_runpod.py A6000"
