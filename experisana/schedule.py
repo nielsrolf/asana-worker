@@ -121,6 +121,7 @@ def main(file_path: str, onlyprint: bool = False):
 
     jobs_context = {}
     jobs_dependencies = {}
+    unique_ids = set()
 
     for combination in combinations:
         combined_context = {**default_context, **combination}
@@ -134,6 +135,11 @@ def main(file_path: str, onlyprint: bool = False):
                         context[key] = resolve_dependencies(context[key], jobs_context)
             
             job_name = context['name']
+            unique_id = context.get('unique_id', job_name)
+            if unique_id in unique_ids:
+                print(f"Skipping {unique_id} because it already exists.")
+                continue
+            unique_ids.add(unique_id)
             jobs_context[job_name] = context
             jobs_dependencies[job_name] = [match.group(1) for match in re.finditer(r'\$\(([a-zA-Z0-9_-]+)\.\w+\)', str(stage))]
 
