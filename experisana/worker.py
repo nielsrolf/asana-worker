@@ -9,8 +9,9 @@ from requests.exceptions import RequestException
 from asana.rest import ApiException
 import backoff
 import yaml
+import threading
 
-load_dotenv()
+load_dotenv(override=True)
 
 # Configuration
 ACCESS_TOKEN = os.getenv("ASANA_ACCESS_TOKEN")
@@ -49,9 +50,9 @@ def load_config():
             return yaml.safe_load(open(config_path, "r"))
         cwd = os.path.dirname(cwd)
     # A bit of custom logic for imo-experiments
-    config_path = "/workspace/experisana.yaml"
-    if os.path.exists(config_path):
-        return yaml.safe_load(open(config_path, "r"))
+    for config_path in ["/workspace/experisana.yaml", "/Users/nielswarncke/Documents/code/asana-worker/experisana.yaml"]:
+        if os.path.exists(config_path):
+            return yaml.safe_load(open(config_path, "r"))
     return {}
 CONFIG = load_config()
 
@@ -243,10 +244,87 @@ def run_experiment(task, column_gids):
     os.chdir(original_cwd)
 
 
-def maybe_shutdown(idle_since):
+@backoff.on_exception(backoff.expo, (ApiException, RequestException), max_tries=5)
+def create_worker_task(worker_id):
+    try:
+        task_data = {
+            "data": {
+                "name": worker_id,
+                "notes": worker_id,
+                "projects": [PROJECT_GID],
+                "memberships": [{"project": PROJECT_GID, "section": BACKLOG_COLUMN_GID}]
+            }
+        }
+        task = tasks_api_instance.create_task(task_data, opts)
+        move_task_to_column(task['gid'], column_gids["Active Workers"])
+        return task
+    except ApiException as e:
+        print(f"Exception when calling TasksApi->create_task: {e}")
+        raise
+
+@backoff.on_exception(backoff.expo, (ApiException, RequestException), max_tries=5)
+def delete_worker_task(task_gid):
+    try:
+        tasks_api_instance.delete_task(task_gid)
+    except ApiException as e:
+        print(f"Exception when calling TasksApi->delete_task: {e}")
+        raise
+
+def get_or_create_worker_task(worker_id):
+    tasks = tasks_api_instance.get_tasks_for_section(column_gids["Active Workers"], {"limit": 100})
+    for task in tasks:
+        if task['name'] == f"Worker {worker_id}":
+            return task
+    return create_worker_task(worker_id)
+
+def count_available_tasks():
+    tasks = tasks_api_instance.get_tasks_for_section(column_gids["Backlog"], {"limit": 100})
+    count = 0
+    for task in tasks:
+        task_details = get_task_details(task['gid'])
+        dependencies = get_task_dependencies(task_details)
+        if all(is_task_done(dep, column_gids["Done"]) for dep in dependencies):
+            count += 1
+    return count
+
+def count_active_workers():
+    tasks = tasks_api_instance.get_tasks_for_section(column_gids["Active Workers"], {"limit": 100})
+    return len(list(tasks))
+
+
+def maybe_scale():
+    if "scale" not in CONFIG:
+        return
+    available_tasks = count_available_tasks()
+    active_workers = count_active_workers()
+    if active_workers < CONFIG['scale']['max'] and available_tasks > active_workers:
+        placeholder = create_worker_task(f"Starting worker")
+        process = subprocess.Popen(CONFIG['scale']['cmd'], shell=True)
+        process.wait()
+        move_task_to_column(placeholder['gid'], column_gids["Done"])
+
+
+def maybe_scale_in_background():
+    thread = threading.Thread(target=maybe_scale)
+    thread.start()
+
+
+def remove_worker_task(worker_id):
+    # Delete the worker's "Active Worker" entry
+    try:
+        tasks = tasks_api_instance.get_tasks_for_section(column_gids["Active Workers"], {"limit": 100})
+        for task in tasks:
+            if task['name'] == worker_id:
+                delete_worker_task(task['gid'])
+                print(f"Deleted Active Worker entry for {worker_id}")
+                break
+    except Exception as e:
+        print(f"Error deleting Active Worker entry: {e}")
+
+def maybe_shutdown(idle_since, worker_id):
     try:
         shutdown_after_minutes = CONFIG['shutdown']['after_idle_minutes']
-        shutdown_cmd = CONFIG['shutdown'].get("cmd", "shutdown -h now")
+        shutdown_cmd = CONFIG['shutdown']['cmd'].format(worker_id=worker_id)
     except KeyError:
         # We remain active if the config is missing
         return
@@ -254,12 +332,13 @@ def maybe_shutdown(idle_since):
     print(f"Idle for {idle_seconds} seconds. Shutting down after {shutdown_after_minutes} minutes of inactivity via '{shutdown_cmd}'")
     if idle_seconds > 60 * shutdown_after_minutes:
         print("Shutting down worker due to inactivity")
+        remove_worker_task(worker_id)
         os.system(shutdown_cmd)
         exit(0)
 
-
 def main():
     worker_id = get_or_create_worker_id()
+    worker_task = get_or_create_worker_task(worker_id)
 
     if not column_gids:
         print("Failed to fetch column GIDs")
@@ -268,17 +347,21 @@ def main():
     idle_since = datetime.now()
     while True:
         try:
+            maybe_scale_in_background()
             task = get_backlog_task(column_gids["Backlog"], column_gids["Done"])
             if task:
                 run_experiment(task, column_gids)
                 idle_since = datetime.now()
             else:
-                maybe_shutdown(idle_since)
+                maybe_shutdown(idle_since, worker_id)
                 time.sleep(5)  # Sleep for 5 seconds before checking again
+        except KeyboardInterrupt:
+            print("Exiting")
+            remove_worker_task(worker_id)
+            exit(0)
         except Exception as e:
             print(f"Unexpected error in main loop: {e}")
             time.sleep(60)  # Sleep for 1 minute before retrying
-
 
 if __name__ == "__main__":
     main()
