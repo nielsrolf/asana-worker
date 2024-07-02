@@ -135,7 +135,7 @@ def main(file_path: str, onlyprint: bool = False):
             
             job_name = context['name']
             jobs_context[job_name] = context
-            jobs_dependencies[job_name] = [match.group(1) for match in re.finditer(r'\$\((\w+)\.\w+\)', str(stage))]
+            jobs_dependencies[job_name] = [match.group(1) for match in re.finditer(r'\$\(([a-zA-Z0-9_-]+)\.\w+\)', str(stage))]
 
             script = substitute_variables(script_template, context)
             print("-" * 80)
