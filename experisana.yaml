@@ -6,3 +6,4 @@ shutdown:
 scale:
   max: 2
   cmd: "python /workspace/code/influencing-model-organisms/unsloth/start_runpod.py A6000"
+  wait_between_scales_min: 1
