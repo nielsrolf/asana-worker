@@ -1,9 +1,9 @@
 
 shutdown:
   after_idle_minutes: 1
-  cmd: "python /workspace/code/influencing-model-organisms/unsloth/stop_runpod.py {worker_id}"
+  cmd: "python /workspace/code/influencing-model-organisms/unsloth/stop_runpod.py {worker_id}" # This runs on the worker
 
 scale:
   max: 2
-  cmd: "python /workspace/code/influencing-model-organisms/unsloth/start_runpod.py A6000"
+  cmd: "python start_runpod.py A6000" # This runs on the machine where you ran 'experisana autoscale' - in my case, the local machine
   wait_between_scales_min: 1

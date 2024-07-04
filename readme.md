@@ -70,3 +70,20 @@ stages:
 - Default Section: Defines default values for parameters. Lists indicate a sweep will be performed over those values.
 - Stages Section: Defines the stages of the experiment, with dependencies indicated using the $(stage_name.parameter) syntax.
 When running schedule.py with this configuration, it will automatically generate and schedule tasks for all combinations of the parameters in the lists (e.g., for all combinations of size and cot).
+
+## Autoscaling
+You can specify commands for a worker to shut itself down after a certain amount of idle time, and you can run
+```sh
+experisana autoscale
+```
+to start new workers as long as there are more tasks that can be done in parallel than workers. For this, you need a `experisana.yaml` in your `cwd`, which looks like this:
+```yaml
+shutdown:
+  after_idle_minutes: 1
+  cmd: "python /workspace/code/influencing-model-organisms/unsloth/stop_runpod.py {worker_id}" # This runs on the worker
+
+scale:
+  max: 2
+  cmd: "python start_runpod.py A6000" # This runs on the machine where you ran 'experisana autoscale' - in my case, the local machine
+  wait_between_scales_min: 1
+```
