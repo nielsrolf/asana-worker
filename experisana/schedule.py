@@ -14,6 +14,7 @@ from experisana.worker import (
 import random
 import fire
 import itertools
+from uuid import uuid4
 
 
 def load_yaml(file_path: str) -> Dict:
@@ -135,7 +136,7 @@ def main(file_path: str, onlyprint: bool = False):
                         context[key] = resolve_dependencies(context[key], jobs_context)
             
             job_name = context['name']
-            unique_id = context.get('unique_id', job_name)
+            unique_id = context.get('unique_id', uuid4())
             if unique_id in unique_ids:
                 print(f"Skipping {unique_id} because it already exists.")
                 continue
