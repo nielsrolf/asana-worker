@@ -14,7 +14,8 @@ from experisana.worker import (
     stories_api_instance,
     CONFIG,
     opts,
-    move_task_to_column
+    move_task_to_column,
+    upload_log_to_task
 )
 
 @backoff.on_exception(backoff.expo, ApiException, max_tries=5)
@@ -41,8 +42,15 @@ def create_worker_task(worker_id):
 
 @backoff.on_exception(backoff.expo, ApiException, max_tries=5)
 def post_comment_to_task(task_gid, comment_text):
+    if len(comment_text) > 2000:
+        with open(f'/tmp/logs-{task_gid}', 'w') as f:
+            f.write(comment_text)
+        upload_log_to_task(task_gid, f'/tmp/logs-{task_gid}')
+        comment_text = comment_text[:2000]
+        comment_text += "Comment too long. See attached file."
     body = {"data": {"text": comment_text}}
     stories_api_instance.create_story_for_task(body, task_gid, opts)
+
 
 def scale_up():
     worker_id = f"worker-{int(time.time())}"

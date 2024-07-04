@@ -197,7 +197,7 @@ def run_experiment(task, column_gids, worker_id):
     try:
         with open(log_file_path, "r") as log_file:
             log_lines = log_file.readlines()
-            comment_text = f'Status: {status} with logs:\n```\n' + ''.join(log_lines[:100]) + '\n```\n'
+            comment_text = f'Status: {status} with logs:\n' + ''.join(log_lines[:100])
             if len(log_lines) > 100:
                 comment_text += f'... and {len(log_lines) - 100} more lines'
                 upload_log_to_task(task_gid, log_file_path)
@@ -340,7 +340,7 @@ def main(worker_id=None):
                 run_experiment(task, column_gids, worker_id)
                 idle_since = datetime.now()
             else:
-                maybe_shutdown(idle_since, worker_id)
+                maybe_shutdown(idle_since, worker_id, worker_task)
                 time.sleep(5)  # Sleep for 5 seconds before checking again
         except KeyboardInterrupt:
             print("Exiting")
