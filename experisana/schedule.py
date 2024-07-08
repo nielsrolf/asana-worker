@@ -16,7 +16,6 @@ import fire
 import itertools
 from uuid import uuid4
 
-
 def load_yaml(file_path: str) -> Dict:
     with open(file_path, 'r') as file:
         return yaml.safe_load(file)
@@ -37,8 +36,11 @@ def substitute_variables(value: str, context: dict[str, str]) -> str:
         prev = value
         for key, val in context.items():
             if isinstance(val, dict):
-                breakpoint()
-            value = value.replace(f"{{{key}}}", str(val))
+                # Handle nested dictionaries
+                for nested_key, nested_val in val.items():
+                    value = value.replace(f"{{{key}.{nested_key}}}", str(nested_val))
+            else:
+                value = value.replace(f"{{{key}}}", str(val))
     return value
 
 def resolve_dependencies(value: str, jobs_context: Dict[str, Dict[str, str]]) -> str:
@@ -107,6 +109,16 @@ def generate_combinations(parameters: Dict[str, List[str]]) -> List[Dict[str, st
     keys, values = zip(*parameters.items())
     return [dict(zip(keys, combination)) for combination in itertools.product(*values)]
 
+def flatten_dict(d: Dict, parent_key: str = '', sep: str = '.') -> Dict:
+    items = []
+    for k, v in d.items():
+        new_key = f"{parent_key}{sep}{k}" if parent_key else k
+        if isinstance(v, dict):
+            items.extend(flatten_dict(v, new_key, sep=sep).items())
+        else:
+            items.append((new_key, v))
+    return dict(items)
+
 def main(file_path: str, onlyprint: bool = False):
     config = load_yaml(file_path)
     
@@ -114,7 +126,9 @@ def main(file_path: str, onlyprint: bool = False):
     default_context = config['default']
     stages = config['stages']
     
-    list_parameters = {k: v for k, v in default_context.items() if isinstance(v, list)}
+    # Handle nested parameters
+    flat_default_context = flatten_dict(default_context)
+    list_parameters = {k: v for k, v in flat_default_context.items() if isinstance(v, list)}
     if list_parameters:
         combinations = generate_combinations(list_parameters)
     else:
@@ -125,7 +139,7 @@ def main(file_path: str, onlyprint: bool = False):
     unique_ids = set()
 
     for combination in combinations:
-        combined_context = {**default_context, **combination}
+        combined_context = {**flat_default_context, **combination}
         for stage in stages:
             context = {**combined_context, **stage}
             
@@ -136,7 +150,7 @@ def main(file_path: str, onlyprint: bool = False):
                         context[key] = resolve_dependencies(context[key], jobs_context)
             
             job_name = context['name']
-            unique_id = context.get('unique_id', uuid4())
+            unique_id = context.get('unique_id', str(uuid4()))
             if unique_id in unique_ids:
                 print(f"Skipping {unique_id} because it already exists.")
                 continue
@@ -150,7 +164,6 @@ def main(file_path: str, onlyprint: bool = False):
             tags = [i.strip() for i in context.get('tags', '').split(',')]
             if not onlyprint:
                 schedule(job_name, script, jobs_dependencies[job_name], tags=tags, title=context.get('model_id'))
-
 
 if __name__ == "__main__":
     fire.Fire(main)

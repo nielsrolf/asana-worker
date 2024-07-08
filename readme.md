@@ -87,3 +87,76 @@ scale:
   cmd: "python start_runpod.py A6000" # This runs on the machine where you ran 'experisana autoscale' - in my case, the local machine
   wait_between_scales_min: 1
 ```
+
+
+## Nested Parameters and Advanced Configuration
+
+The scheduler now supports nested parameters and more complex configuration structures, allowing for greater flexibility in defining experiment configurations. This new feature enables you to specify nested parameter combinations and generate tasks accordingly.
+
+### Example Configuration
+
+Here's an example of how you can use nested parameters in your configuration:
+
+```yaml
+default:
+  group: my-awesome-experiment
+  size: ["8b", "70b"]
+  cot: ["no-cot", "cot"]
+  model_id: "{group}-{size}-{cot}-{name}"
+  tags: "{group},{cot},{size}"
+  param2:
+    - a: 1
+      b: 10
+    - a: 2
+      b: 20
+
+script: |
+  echo "Running experiment with model_id={model_id} and param2.a={param2.a} and param2.b={param2.b}"
+  python main.py --config-name template-{cot} \
+    model_id={model_id} \
+    training.size={size} \
+    training.param2_a={param2.a} \
+    training.param2_b={param2.b}
+
+stages:
+  - name: stage1
+    base_model: "base-model-{size}"
+  - name: stage2
+    base_model: $(stage1.model_id)
+```
+
+In this configuration:
+
+- Nested parameters are defined under `param2`, with each item in the list representing a set of related parameters.
+- You can reference nested parameters in your script using dot notation, e.g., `{param2.a}` and `{param2.b}`.
+- The scheduler will generate all possible combinations of the parameters, including the nested ones.
+
+### Behavior
+
+1. **Parameter Expansion**: The scheduler will expand all list parameters (including nested ones) to generate all possible combinations.
+
+2. **Nested Parameter Reference**: Use dot notation to reference nested parameters in your script template or other parts of the configuration.
+
+3. **Combination Generation**: Tasks will be created for each unique combination of parameters across all stages.
+
+4. **Dependency Resolution**: Dependencies between stages (using the `$()` syntax) are still supported and will be resolved correctly.
+
+### Usage
+
+To use this feature:
+
+1. Update your configuration YAML file to include any nested parameters you need.
+2. Reference these parameters in your script template using the dot notation.
+3. Run the scheduler as usual:
+
+```
+python schedule.py path/to/your/config.yaml
+```
+
+To preview the generated scripts without creating tasks:
+
+```
+python schedule.py path/to/your/config.yaml --onlyprint=True
+```
+
+This new feature allows for more complex and flexible experiment configurations, enabling you to easily manage and schedule tasks with intricate parameter relationships.
