@@ -30,18 +30,33 @@ def substitute_variables(value: str, context: dict[str, str]) -> str:
     Arguments:
         value: string to be filled with values from the context
         context: dict
+    Returns:
+        str: value filled with data from the context
+        accessed_variables: a dict of {variable: value} that were accessed
     """
     prev = ''
+    accessed_variables = {}
     while value != prev:
         prev = value
         for key, val in context.items():
             if isinstance(val, dict):
                 # Handle nested dictionaries
                 for nested_key, nested_val in val.items():
-                    value = value.replace(f"{{{key}.{nested_key}}}", str(nested_val))
-            else:
+                    replace_key = f"{key}.{nested_key}"
+                    if replace_key in value:
+                        value = value.replace(f"{{{key}.{nested_key}}}", str(nested_val))
+                        accessed_variables[replace_key] = nested_val
+            elif f"{{{key}}}" in value:
+                accessed_variables[key] = val
                 value = value.replace(f"{{{key}}}", str(val))
-    return value
+    return value, accessed_variables
+
+def dict_to_hash(d):
+    """Takes a dictionary and returns a deterministic hash"""
+    keys = sorted(d.keys(), key=str)
+    return hash(frozenset((key, d[key]) for key in keys))
+
+
 
 def resolve_dependencies(value: str, jobs_context: Dict[str, Dict[str, str]]) -> str:
     pattern = re.compile(r'\$\((\w+)\.(\w+)\)')
@@ -136,7 +151,8 @@ def main(file_path: str, onlyprint: bool = False):
 
     jobs_context = {}
     jobs_dependencies = {}
-    unique_ids = set()
+
+    unique_keys = set()
 
     for combination in combinations:
         combined_context = {**flat_default_context, **combination}
@@ -146,19 +162,17 @@ def main(file_path: str, onlyprint: bool = False):
             for nested_level in range(4):
                 for key, value in context.items():
                     if isinstance(value, str):
-                        context[key] = substitute_variables(value, context)
+                        context[key], _ = substitute_variables(value, context)
                         context[key] = resolve_dependencies(context[key], jobs_context)
             
             job_name = context['name']
-            unique_id = context.get('unique_id', str(uuid4()))
-            if unique_id in unique_ids:
-                print(f"Skipping {unique_id} because it already exists.")
-                continue
-            unique_ids.add(unique_id)
             jobs_context[job_name] = context
             jobs_dependencies[job_name] = [match.group(1) for match in re.finditer(r'\$\(([a-zA-Z0-9_-]+)\.\w+\)', str(stage))]
 
-            script = substitute_variables(script_template, context)
+            script, accessed_variables = substitute_variables(script_template, context)
+            if dict_to_hash(accessed_variables) in unique_keys:
+                continue
+            unique_keys.add(dict_to_hash(accessed_variables))
             print("-" * 80)
             print(script)
             tags = [i.strip() for i in context.get('tags', '').split(',')]
