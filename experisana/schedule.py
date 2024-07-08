@@ -18,7 +18,13 @@ from uuid import uuid4
 
 def load_yaml(file_path: str) -> Dict:
     with open(file_path, 'r') as file:
-        return yaml.safe_load(file)
+        config = yaml.safe_load(file)
+        if 'sweep' not in config and 'default' in config:
+            config['sweep'] = config.pop('default')
+        if 'stages' not in config:
+            default_stage_name = file_path.split('/')[-1].split('.')[0]
+            config['stages'] = [{'name': default_stage_name}]
+        return config
 
 def substitute_variables(value: str, context: dict[str, str]) -> str:
     """
@@ -138,12 +144,12 @@ def main(file_path: str, onlyprint: bool = False):
     config = load_yaml(file_path)
     
     script_template = config['script']
-    default_context = config['default']
+    sweep_context = config['sweep']
     stages = config['stages']
     
     # Handle nested parameters
-    flat_default_context = flatten_dict(default_context)
-    list_parameters = {k: v for k, v in flat_default_context.items() if isinstance(v, list)}
+    flat_sweep_context = flatten_dict(sweep_context)
+    list_parameters = {k: v for k, v in flat_sweep_context.items() if isinstance(v, list)}
     if list_parameters:
         combinations = generate_combinations(list_parameters)
     else:
@@ -155,7 +161,7 @@ def main(file_path: str, onlyprint: bool = False):
     unique_keys = set()
 
     for combination in combinations:
-        combined_context = {**flat_default_context, **combination}
+        combined_context = {**flat_sweep_context, **combination}
         for stage in stages:
             context = {**combined_context, **stage}
             

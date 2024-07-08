@@ -42,7 +42,7 @@ script: |
     training.base_model={base_model} \
     training.train_dataset={train_on}
 
-default:
+sweep:
   group: my-awesome-experiment
   size: ["8b", "70b"]
   cot: ["no-cot", "cot"]
@@ -67,7 +67,7 @@ stages:
 ```
 
 ### Explanation
-- Default Section: Defines default values for parameters. Lists indicate a sweep will be performed over those values.
+- sweep Section: Defines sweep values for parameters. Lists indicate a sweep will be performed over those values.
 - Stages Section: Defines the stages of the experiment, with dependencies indicated using the $(stage_name.parameter) syntax.
 When running schedule.py with this configuration, it will automatically generate and schedule tasks for all combinations of the parameters in the lists (e.g., for all combinations of size and cot).
 
@@ -98,7 +98,7 @@ The scheduler now supports nested parameters and more complex configuration stru
 Here's an example of how you can use nested parameters in your configuration:
 
 ```yaml
-default:
+sweep:
   group: my-awesome-experiment
   size: ["8b", "70b"]
   cot: ["no-cot", "cot"]
