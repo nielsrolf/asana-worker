@@ -16,6 +16,8 @@ import fire
 import itertools
 from uuid import uuid4
 
+
+
 def load_yaml(file_path: str) -> Dict:
     with open(file_path, 'r') as file:
         config = yaml.safe_load(file)
@@ -140,6 +142,15 @@ def flatten_dict(d: Dict, parent_key: str = '', sep: str = '.') -> Dict:
             items.append((new_key, v))
     return dict(items)
 
+
+def str_presenter(dumper, data):
+    if '\n' in data:  # check for multiline string
+        return dumper.represent_scalar('tag:yaml.org,2002:str', data, style='|')
+    return dumper.represent_scalar('tag:yaml.org,2002:str', data)
+
+yaml.add_representer(str, str_presenter)
+
+
 def main(file_path: str, onlyprint: bool = False):
     config = load_yaml(file_path)
     
@@ -180,6 +191,10 @@ def main(file_path: str, onlyprint: bool = False):
                 continue
             unique_keys.add(dict_to_hash(accessed_variables))
             print("-" * 80)
+            print('# ' + yaml.dump({
+                'Job': job_name,
+                'context': accessed_variables
+            }, default_flow_style=False, sort_keys=False, indent=2, width=120).replace('\n', '\n# '))
             print(script)
             tags = [i.strip() for i in context.get('tags', '').split(',')]
             if not onlyprint:
