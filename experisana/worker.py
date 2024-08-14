@@ -153,6 +153,20 @@ def assign_task_to_worker(task_gid, worker_id):
         print(f"Exception when assigning task to worker: {e}")
         raise
 
+def check_task_status(task_gid, running_column_gid, stop_event):
+    while not stop_event.is_set():
+        time.sleep(60)  # Check every minute
+        try:
+            task = get_task_details(task_gid)
+            if task['memberships'][0]['section']['gid'] != running_column_gid:
+                stop_event.set()
+                print(f"Task {task_gid} was moved out of the Running column. Interrupting execution.")
+                break
+            else:
+                print('.', end='')
+        except Exception as e:
+            print(f"Error checking task status: {e}")
+
 def run_experiment(task, column_gids, worker_id):
     print(f"Running experiment: {task['name']}")
     task_gid = task['gid']
@@ -186,12 +200,38 @@ def run_experiment(task, column_gids, worker_id):
     print(f"Use the following command to watch logs:\n    watch tail {log_file_path}")
     with open(log_file_path, "w") as log_file:
         try:
-            result = subprocess.run(command, shell=True, check=True, stdout=log_file, stderr=subprocess.STDOUT)
-            move_task_to_column(task_gid, column_gids["Done"])
-            status = 'succeeded'
-        except subprocess.CalledProcessError:
-            move_task_to_column(task_gid, column_gids["Failed"])
+            # Create a stop event and start the status checking thread
+            stop_event = threading.Event()
+            status_thread = threading.Thread(target=check_task_status, args=(task_gid, column_gids["Running"], stop_event))
+            status_thread.start()
+
+            # Run the command with a timeout
+            process = subprocess.Popen(command, shell=True, stdout=log_file, stderr=subprocess.STDOUT)
+            
+            while process.poll() is None:
+                if stop_event.is_set():
+                    process.terminate()
+                    process.wait(timeout=10)
+                    status = 'interrupted'
+                    break
+                time.sleep(1)
+            else:
+                status = 'succeeded' if process.returncode == 0 else 'failed'
+
+            # Stop the status checking thread
+            stop_event.set()
+            status_thread.join()
+
+            if status == 'succeeded':
+                move_task_to_column(task_gid, column_gids["Done"])
+            elif status == 'failed':
+                move_task_to_column(task_gid, column_gids["Failed"])
+            # If interrupted, we don't move the task
+
+        except Exception as e:
+            print(f"Exception during experiment execution: {e}")
             status = 'failed'
+            move_task_to_column(task_gid, column_gids["Failed"])
 
     # Read the first 100 lines of the log file and post as a comment
     try:
@@ -215,6 +255,7 @@ def run_experiment(task, column_gids, worker_id):
 
     # Change back to the original working directory
     os.chdir(original_cwd)
+    return status != 'interrupted'
 
 
 
@@ -337,11 +378,14 @@ def main(worker_id=None):
         try:
             task = get_backlog_task(column_gids["Backlog"], column_gids["Done"])
             if task:
-                run_experiment(task, column_gids, worker_id)
-                idle_since = datetime.now()
+                task_completed = run_experiment(task, column_gids, worker_id)
+                if task_completed:
+                    idle_since = datetime.now()
+                else:
+                    print("Task was interrupted. Checking backlog again.")
             else:
                 maybe_shutdown(idle_since, worker_id, worker_task)
-                time.sleep(5)  # Sleep for 5 seconds before checking again
+                time.sleep(5) 
         except KeyboardInterrupt:
             print("Exiting")
             delete_worker_task(worker_task['gid'])
