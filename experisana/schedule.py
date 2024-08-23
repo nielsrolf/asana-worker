@@ -14,7 +14,7 @@ from experisana.worker import (
 import random
 import fire
 import itertools
-from uuid import uuid4
+import os
 
 
 
@@ -151,6 +151,35 @@ def str_presenter(dumper, data):
 yaml.add_representer(str, str_presenter)
 
 
+def create_master_task(file_path: str, scheduled_tasks: List[str]):
+    file_name = os.path.basename(file_path)
+    
+    # Create the master task
+    master_task_data = {
+        "data": {
+            "name": f"Master Task: {file_name}",
+            "notes": "# Script\necho Done!\n\n# Depends on",
+            "projects": [PROJECT_GID],
+            "memberships": [{"project": PROJECT_GID, "section": BACKLOG_COLUMN_GID}]
+        }
+    }
+    
+    # Add dependencies
+    for task_name in scheduled_tasks:
+        task_gid = job_name_to_gid.get(task_name)
+        if task_gid:
+            master_task_data["data"]["notes"] += f"\n- {task_name} (https://app.asana.com/0/{WORKSPACE_GID}/{task_gid})"
+    
+    # Update the master task with the complete list of dependencies
+    master_task = tasks_api_instance.create_task(master_task_data, opts)
+    master_task_gid = master_task['gid']
+    
+    # Attach the YAML file
+    with open(file_path, 'rb') as file:
+        tasks_api_instance.create_attachment_for_task(master_task_gid, file=file, name=file_name)
+    
+    print(f"Master task '{file_name}' created with GID: {master_task_gid}")
+
 def main(file_path: str, onlyprint: bool = False):
     config = load_yaml(file_path)
     
@@ -168,6 +197,7 @@ def main(file_path: str, onlyprint: bool = False):
 
     jobs_context = {}
     jobs_dependencies = {}
+    scheduled_tasks = []
 
     unique_keys = set()
 
@@ -199,6 +229,10 @@ def main(file_path: str, onlyprint: bool = False):
             tags = [i.strip() for i in context.get('tags', '').split(',')]
             if not onlyprint:
                 schedule(job_name, script, jobs_dependencies[job_name], tags=tags, title=context.get('model_id'))
+                scheduled_tasks.append(job_name)
+
+    if not onlyprint:
+        create_master_task(file_path, scheduled_tasks)
 
 if __name__ == "__main__":
     fire.Fire(main)

@@ -205,6 +205,8 @@ def run_experiment(task, column_gids, worker_id):
             status_thread = threading.Thread(target=check_task_status, args=(task_gid, column_gids["Running"], stop_event))
             status_thread.start()
 
+            print(f"Running command: {command}")
+
             # Run the command with a timeout
             process = subprocess.Popen(command, shell=True, stdout=log_file, stderr=subprocess.STDOUT)
             
