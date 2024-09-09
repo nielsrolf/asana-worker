@@ -9,7 +9,8 @@ from experisana.worker import (
     BACKLOG_COLUMN_GID,
     opts,
     api_client,
-    tasks_api_instance
+    tasks_api_instance,
+    upload_log_to_task
 )
 import random
 import fire
@@ -175,9 +176,7 @@ def create_master_task(file_path: str, scheduled_tasks: List[str]):
     master_task_gid = master_task['gid']
     
     # Attach the YAML file
-    with open(file_path, 'rb') as file:
-        tasks_api_instance.create_attachment_for_task(master_task_gid, file=file, name=file_name)
-    
+    upload_log_to_task(master_task_gid, file_path)
     print(f"Master task '{file_name}' created with GID: {master_task_gid}")
 
 def main(file_path: str, onlyprint: bool = False):

@@ -30,6 +30,13 @@ Sometimes you want to schedule a large amount of jobs which may have dependencie
 ```
 experisana schedule example.yaml
 ```
+This creates one task for each job that needs to be run plus an additional master task that links to all tasks, to better keep track of experiment bundles and to simplify artifact downloading via `experisana pull`.
+
+## Pull results
+When scheduling multiple tasks via the above method, you can download artifacts that are uploaded to the task via the following command:
+```
+experisana pull <url to master task> # Eg: https://app.asana.com/0/123456789/123456789
+```
 
 ## Example YAML Configuration
 Here is an example of an actual experiment configuration you might use:∆

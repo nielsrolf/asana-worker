@@ -18,6 +18,11 @@ $(cat experisana/worker.py)
 $(cat experisana/worker.py)
 \`\`\`
 
+# --- experisana/pull.py
+\`\`\`python
+$(cat experisana/pull.py)
+\`\`\`
+
 # --- experisana/autoscale.py
 \`\`\`python
 $(cat experisana/autoscale.py)
