@@ -1,4 +1,5 @@
 import os
+import json
 import re
 import asana
 from urllib.parse import urlparse
@@ -7,6 +8,8 @@ import requests
 from asana.rest import ApiException
 import backoff
 from datetime import datetime
+
+from experisana.schedule import process_yaml
 
 load_dotenv(override=True)
 
@@ -50,6 +53,23 @@ def pull_attachments(master_task_url):
     # Get master task details
     master_task = get_task_details(master_task_gid)
 
+    # Download attachments from master task into cwd
+    tasks_cmd_and_context = {}
+    attachments = get_attachments(master_task_gid)
+    for attachment in attachments:
+        name = attachment.get('name', 'unnamed_file')
+        download_url = attachment.get('download_url')
+
+        if not download_url:
+            print(f"Warning: No download URL for attachment {name} in task {master_task['name']}. Skipping.")
+            continue
+
+        file_path = os.path.join(os.getcwd(), name)
+        download_file(download_url, file_path)
+        print(f"Downloaded: {file_path}")
+        tasks_cmd_and_context.update(process_yaml(file_path, True, True))
+    
+
     # Extract subtask GIDs from master task notes
     subtask_gids = re.findall(r'https://app\.asana\.com/0/\d+/(\d+)', master_task['notes'])
 
@@ -57,6 +77,13 @@ def pull_attachments(master_task_url):
         subtask = get_task_details(subtask_gid)
         folder_name = sanitize_filename(subtask['name'])
         os.makedirs(folder_name, exist_ok=True)
+
+        # Write cmd and context to file
+        with open(os.path.join(folder_name, 'cmd.sh'), 'w') as f:
+            f.write(tasks_cmd_and_context[subtask['name']]['cmd'])
+
+        with open(os.path.join(folder_name, 'context.json'), 'w') as f:
+            f.write(json.dumps(tasks_cmd_and_context[subtask['name']]['context'], indent=4))
 
         attachments = get_attachments(subtask_gid)
         latest_attachments = {}

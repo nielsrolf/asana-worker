@@ -179,7 +179,10 @@ def create_master_task(file_path: str, scheduled_tasks: List[str]):
     upload_log_to_task(master_task_gid, file_path)
     print(f"Master task '{file_name}' created with GID: {master_task_gid}")
 
-def main(file_path: str, onlyprint: bool = False):
+def process_yaml(file_path: str, onlyprint: bool = False, silent: bool = False) -> Dict[str, Dict[str, str]]:
+    if silent:
+        print = lambda *args, **kwargs: None
+    tasks_cmd_and_context = {}
     config = load_yaml(file_path)
     
     script_template = config['script']
@@ -224,14 +227,18 @@ def main(file_path: str, onlyprint: bool = False):
                 'Job': job_name,
                 'context': accessed_variables
             }, default_flow_style=False, sort_keys=False, indent=2, width=120).replace('\n', '\n# '))
+            title = context.get('model_id') or job_name
+            tasks_cmd_and_context[title] = {'cmd': script, 'context': accessed_variables}
             print(script)
             tags = [i.strip() for i in context.get('tags', '').split(',')]
             if not onlyprint:
-                schedule(job_name, script, jobs_dependencies[job_name], tags=tags, title=context.get('model_id'))
+                schedule(job_name, script, jobs_dependencies[job_name], tags=tags, title=title)
                 scheduled_tasks.append(job_name)
 
     if not onlyprint:
         create_master_task(file_path, scheduled_tasks)
 
+    return tasks_cmd_and_context
+
 if __name__ == "__main__":
-    fire.Fire(main)
+    fire.Fire(process_yaml)

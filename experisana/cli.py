@@ -1,5 +1,5 @@
 import fire
-from experisana.schedule import main as schedule_main
+from experisana.schedule import process_yaml as schedule_main
 from experisana.worker import main as worker_main
 from experisana.autoscale import autoscale
 from experisana.pull import pull_attachments
