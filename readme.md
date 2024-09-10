@@ -35,7 +35,11 @@ This creates one task for each job that needs to be run plus an additional maste
 ## Pull results
 When scheduling multiple tasks via the above method, you can download artifacts that are uploaded to the task via the following command:
 ```
-experisana pull <url to master task> # Eg: https://app.asana.com/0/123456789/123456789
+experisana pull --url <url to master task> # Eg: https://app.asana.com/0/123456789/123456789
+```
+Alternatively, you can pull all tasks with a given tag:
+```
+experisana pull --tag some-tag
 ```
 
 ## Example YAML Configuration

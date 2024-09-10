@@ -152,7 +152,7 @@ def str_presenter(dumper, data):
 yaml.add_representer(str, str_presenter)
 
 
-def create_master_task(file_path: str, scheduled_tasks: List[str]):
+def create_master_task(file_path: str, scheduled_tasks: Dict[str, str]):
     file_name = os.path.basename(file_path)
     
     # Create the master task
@@ -166,8 +166,7 @@ def create_master_task(file_path: str, scheduled_tasks: List[str]):
     }
     
     # Add dependencies
-    for task_name in scheduled_tasks:
-        task_gid = job_name_to_gid.get(task_name)
+    for task_name, task_gid in scheduled_tasks.items():
         if task_gid:
             master_task_data["data"]["notes"] += f"\n- {task_name} (https://app.asana.com/0/{WORKSPACE_GID}/{task_gid})"
     
@@ -181,7 +180,9 @@ def create_master_task(file_path: str, scheduled_tasks: List[str]):
 
 def process_yaml(file_path: str, onlyprint: bool = False, silent: bool = False) -> Dict[str, Dict[str, str]]:
     if silent:
-        print = lambda *args, **kwargs: None
+        maybe_print = lambda *args, **kwargs: None
+    else:
+        maybe_print = print
     tasks_cmd_and_context = {}
     config = load_yaml(file_path)
     
@@ -199,7 +200,7 @@ def process_yaml(file_path: str, onlyprint: bool = False, silent: bool = False) 
 
     jobs_context = {}
     jobs_dependencies = {}
-    scheduled_tasks = []
+    scheduled_tasks = {}
 
     unique_keys = set()
 
@@ -222,18 +223,18 @@ def process_yaml(file_path: str, onlyprint: bool = False, silent: bool = False) 
             if dict_to_hash(accessed_variables) in unique_keys:
                 continue
             unique_keys.add(dict_to_hash(accessed_variables))
-            print("-" * 80)
-            print('# ' + yaml.dump({
+            maybe_print("-" * 80)
+            maybe_print('# ' + yaml.dump({
                 'Job': job_name,
                 'context': accessed_variables
             }, default_flow_style=False, sort_keys=False, indent=2, width=120).replace('\n', '\n# '))
             title = context.get('model_id') or job_name
             tasks_cmd_and_context[title] = {'cmd': script, 'context': accessed_variables}
-            print(script)
+            maybe_print(script)
             tags = [i.strip() for i in context.get('tags', '').split(',')]
             if not onlyprint:
-                schedule(job_name, script, jobs_dependencies[job_name], tags=tags, title=title)
-                scheduled_tasks.append(job_name)
+                task_guid = schedule(job_name, script, jobs_dependencies[job_name], tags=tags, title=title)
+                scheduled_tasks[title] = task_guid
 
     if not onlyprint:
         create_master_task(file_path, scheduled_tasks)
