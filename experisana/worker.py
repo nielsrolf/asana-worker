@@ -45,16 +45,18 @@ stories_api_instance = asana.StoriesApi(api_client)
 def load_config():
     """Check for experisana.yaml in [./, ../, ...]"""
     cwd = os.getcwd()
+    config = {}
     while cwd != "/":
         config_path = os.path.join(cwd, "experisana.yaml")
         if os.path.exists(config_path):
-            return yaml.safe_load(open(config_path, "r"))
+            config = yaml.safe_load(open(config_path, "r"))
         cwd = os.path.dirname(cwd)
-    # A bit of custom logic for imo-experiments
-    config = {}
+
+    # A bit of custom logic for imo-experiment
     for config_path in ["/workspace/experisana.yaml", "/Users/nielswarncke/Documents/code/asana-worker/experisana.yaml"]:
         if os.path.exists(config_path):
             config = yaml.safe_load(open(config_path, "r"))
+
     # Initialize cache if not present
     if 'cache' not in config:
         config['cache'] = {
@@ -157,7 +159,7 @@ def update_cache(context: Dict, config: Dict) -> Dict:
 
 @backoff.on_exception(backoff.expo, (ApiException, RequestException), max_tries=5)
 def get_backlog_task(backlog_column_gid, done_column_gid):
-    tasks = tasks_api_instance.get_tasks_for_section(backlog_column_gid)
+    tasks = tasks_api_instance.get_tasks_for_section(backlog_column_gid, {"limit": 1})
     
     # Score each task based on cache hits
     scored_tasks = []
@@ -189,15 +191,6 @@ def get_backlog_task(backlog_column_gid, done_column_gid):
     
     return random.choice(best_tasks)
 
-def run_experiment(task, column_gids, worker_id):
-    print(f"Running experiment: {task['name']}")
-    task_gid = task['gid']
-    
-    # Extract context and update cache before running
-    context = extract_context_from_notes(task['notes'])
-    if context:
-        global CONFIG
-        CONFIG = update_cache(context, CONFIG)
 
 @backoff.on_exception(backoff.expo, (ApiException, RequestException), max_tries=5)
 def assign_task_to_worker(task_gid, worker_id):
@@ -253,6 +246,12 @@ def run_experiment(task, column_gids, worker_id):
         print(f"Task {task_gid} was assigned to another worker. Skipping.")
         return False
     
+    # Extract context and update cache before running
+    context = extract_context_from_notes(task['notes'])
+    if context:
+        global CONFIG
+        CONFIG = update_cache(context, CONFIG)
+
     command = task['notes'].strip().split("# Depends on")[0].strip().split("# Assigned to:")[0].strip()
     # Prepend 'set -e' to ensure the shell exits if any command fails
     command = f"set -e; {command}"
