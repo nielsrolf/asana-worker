@@ -30,7 +30,7 @@ opts = {
 }
 
 def sanitize_filename(filename):
-    return re.sub(r'[^\w\-_\. ]', '_', filename)
+    return re.sub(r'[^\w\-_\. ]', '_', filename.split('/')[-1])
 
 @backoff.on_exception(backoff.expo, ApiException, max_tries=5)
 def get_task_details(task_gid):

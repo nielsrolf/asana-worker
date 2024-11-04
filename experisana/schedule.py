@@ -1,3 +1,4 @@
+import json
 import yaml
 import re
 from typing import List, Dict
@@ -97,7 +98,7 @@ def get_or_create_tag(tag_name: str) -> str:
     tag = tags_api_instance.create_tag(tag_data, {'opt_fields': 'gid'})
     return tag['gid']
 
-def schedule(task_name: str, script: str, depends_on: List[str], tags: List[str] = [], title: str = None):
+def schedule(task_name: str, script: str, depends_on: List[str], tags: List[str] = [], title: str = None, context: Dict = None):
     notes = f"# Script\n{script}\n\n# Depends on\n"
     for dependency in depends_on:
         dependency_gid = job_name_to_gid.get(dependency, None)
@@ -106,6 +107,8 @@ def schedule(task_name: str, script: str, depends_on: List[str], tags: List[str]
         else:
             notes += f"- {dependency} (GID not found)\n"
 
+    if context:
+        notes += f"\n# Context\n```json\n{json.dumps(context, indent=2)}\n```"
     task_data = {
         "data": {
             "name": title or task_name,
@@ -233,7 +236,7 @@ def process_yaml(file_path: str, onlyprint: bool = False, silent: bool = False) 
             maybe_print(script)
             tags = [i.strip() for i in context.get('tags', '').split(',')]
             if not onlyprint:
-                task_guid = schedule(job_name, script, jobs_dependencies[job_name], tags=tags, title=title)
+                task_guid = schedule(job_name, script, jobs_dependencies[job_name], tags=tags, title=title, context=accessed_variables)
                 scheduled_tasks[title] = task_guid
 
     if not onlyprint:

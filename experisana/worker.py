@@ -1,3 +1,4 @@
+import random
 import asana
 import os
 import subprocess
@@ -50,10 +51,17 @@ def load_config():
             return yaml.safe_load(open(config_path, "r"))
         cwd = os.path.dirname(cwd)
     # A bit of custom logic for imo-experiments
+    config = {}
     for config_path in ["/workspace/experisana.yaml", "/Users/nielswarncke/Documents/code/asana-worker/experisana.yaml"]:
         if os.path.exists(config_path):
-            return yaml.safe_load(open(config_path, "r"))
-    return {}
+            config = yaml.safe_load(open(config_path, "r"))
+    # Initialize cache if not present
+    if 'cache' not in config:
+        config['cache'] = {
+            'base_model': [],
+            'model_id': []
+        }
+    return config
 CONFIG = load_config()
 
 @backoff.on_exception(backoff.expo, (ApiException), max_tries=100)
@@ -108,19 +116,88 @@ def is_task_done(task_gid, done_column_gid):
         print(f"Exception when checking task status: {e}")
         raise
 
+import json
+import re
+from typing import Dict, Optional, List
+
+def extract_context_from_notes(notes: str) -> Optional[Dict]:
+    """Extract the JSON context from task notes."""
+    context_match = re.search(r'# Context\n```json\n(.*?)\n```', notes, re.DOTALL)
+    if context_match:
+        try:
+            return json.loads(context_match.group(1))
+        except json.JSONDecodeError:
+            return None
+    return None
+
+def calculate_cache_score(task_context: Dict, worker_cache: Dict[str, List[str]]) -> int:
+    """Calculate how many cached items match the task context."""
+    if not task_context:
+        return 0
+    
+    score = 0
+    for cache_key, cached_values in worker_cache.items():
+        if cache_key in task_context and task_context[cache_key] in cached_values:
+            score += 1
+    return score
+
+def update_cache(context: Dict, config: Dict) -> Dict:
+    """Update the worker's cache with new values from the task context."""
+    for cache_key in config['cache'].keys():
+        if cache_key in context:
+            if context[cache_key] not in config['cache'][cache_key]:
+                config['cache'][cache_key].append(context[cache_key])
+    
+    # Save the updated config
+    config_path = os.path.join(os.getcwd(), "experisana.yaml")
+    with open(config_path, "w") as f:
+        yaml.dump(config, f)
+    
+    return config
+
 @backoff.on_exception(backoff.expo, (ApiException, RequestException), max_tries=5)
 def get_backlog_task(backlog_column_gid, done_column_gid):
-    tasks = tasks_api_instance.get_tasks_for_section(backlog_column_gid, {"limit": 1})
+    tasks = tasks_api_instance.get_tasks_for_section(backlog_column_gid)
+    
+    # Score each task based on cache hits
+    scored_tasks = []
     for task in tasks:
         try:
             task_details = get_task_details(task['gid'])
             dependencies = get_task_dependencies(task_details)
-            if all(is_task_done(dep, done_column_gid) for dep in dependencies):
-                return task_details
+            
+            # Skip tasks with unmet dependencies
+            if not all(is_task_done(dep, done_column_gid) for dep in dependencies):
+                continue
+                
+            # Extract context and calculate cache score
+            context = extract_context_from_notes(task_details['notes'])
+            score = calculate_cache_score(context, CONFIG['cache'])
+            scored_tasks.append((score, task_details))
+            
         except ApiException as e:
-            print(f"Exception when calling get_backlog_task: {e}")
-            raise
-    return None
+            print(f"Exception when scoring task: {e}")
+            continue
+    
+    if not scored_tasks:
+        return None
+    
+    # Sort by score (highest first) and randomly select among tasks with the same highest score
+    scored_tasks.sort(key=lambda x: x[0], reverse=True)
+    highest_score = scored_tasks[0][0]
+    best_tasks = [task for score, task in scored_tasks if score == highest_score]
+    
+    return random.choice(best_tasks)
+
+def run_experiment(task, column_gids, worker_id):
+    print(f"Running experiment: {task['name']}")
+    task_gid = task['gid']
+    
+    # Extract context and update cache before running
+    context = extract_context_from_notes(task['notes'])
+    if context:
+        global CONFIG
+        CONFIG = update_cache(context, CONFIG)
 
 @backoff.on_exception(backoff.expo, (ApiException, RequestException), max_tries=5)
 def assign_task_to_worker(task_gid, worker_id):

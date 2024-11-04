@@ -7,3 +7,7 @@ scale:
   max: 2
   cmd: "python start_runpod.py A6000" # This runs on the machine where you ran 'experisana autoscale' - in my case, the local machine
   wait_between_scales_min: 1
+
+cache:
+  - base_model
+  - model_id
